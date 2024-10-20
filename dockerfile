@@ -1,36 +1,43 @@
-# Pull php-apache image 
-FROM php:7.4.1-apache
+# Use an official PHP runtime as a parent image
+FROM php:8.1-fpm
 
-# use root user
-USER root 
+# Set working directory
+WORKDIR /var/www
 
-# Set working directory to the apache public directory 
-WORKDIR /var/www/html
-
-# Copy all files into the apache public directory
-COPY . /var/www/html/
-
-# Install the dependecies to run php
+# Install dependencies
 RUN apt-get update && apt-get install -y \
+    build-essential \
     libpng-dev \
-    zlib1g-dev \
-    libxml2-dev \
-    libzip-dev \ 
+    libjpeg-dev \
+    libfreetype6-dev \
+    locales \
     zip \
-    curl \
+    jpegoptim optipng pngquant gifsicle \
+    vim \
     unzip \
-    && docker-php-ext-configure gd \
-    && docker-php-ext-install -j$(nproc) gd \
-    && docker-php-ext-install pdo_mysql \
-    && docker-php-ext-install mysqli \
-    && docker-php-ext-install zip \
-    && docker-php-source delete
+    git \
+    curl \
+    libonig-dev \
+    libxml2-dev \
+    libzip-dev \
+    nginx \
+    supervisor
 
+# Install PHP extensions
+RUN docker-php-ext-install pdo pdo_mysql mbstring exif pcntl bcmath gd zip
 
-COPY ./vhost.conf /etc/apache2/sites-available/000-default.conf
+# Install Composer
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# Download php composer
-RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+# Copy application code to the container
+COPY . .
 
-RUN chown -R www-data:www-data /var/www/html \
-    && a2enmod rewrite
+# Set appropriate permissions for Laravel
+RUN chown -R www-data:www-data /var/www \
+    && chmod -R 755 /var/www/storage
+
+# Expose the port Nginx is running on
+EXPOSE 80
+
+# Start Nginx and PHP-FPM services
+CMD service nginx start && php-fpm
