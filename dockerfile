@@ -1,43 +1,50 @@
-# Use an official PHP runtime as a parent image
-FROM php:8.1-fpm
+# Use the official PHP image with Apache
+FROM php:8.2-apache
 
-# Set working directory
-WORKDIR /var/www
-
-# Install dependencies
+# Install system dependencies and PHP extensions required by Laravel
 RUN apt-get update && apt-get install -y \
-    build-essential \
     libpng-dev \
     libjpeg-dev \
     libfreetype6-dev \
-    locales \
-    zip \
-    jpegoptim optipng pngquant gifsicle \
-    vim \
-    unzip \
-    git \
-    curl \
-    libonig-dev \
-    libxml2-dev \
     libzip-dev \
-    nginx \
-    supervisor
+    git \
+    unzip \
+    curl \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install gd pdo pdo_mysql zip \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install PHP extensions
-RUN docker-php-ext-install pdo pdo_mysql mbstring exif pcntl bcmath gd zip
+# Install Composer (a PHP dependency manager)
+RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
 
-# Install Composer
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+# Enable Apache mod_rewrite for Laravel
+RUN a2enmod rewrite
 
-# Copy application code to the container
+# Set the working directory inside the container
+WORKDIR /var/www/html
+
+# Copy Laravel project into the container
 COPY . .
 
-# Set appropriate permissions for Laravel
-RUN chown -R www-data:www-data /var/www \
-    && chmod -R 755 /var/www/storage
+# Set the correct permissions for Laravel files
+RUN chown -R www-data:www-data /var/www/html \
+    && find /var/www/html -type d -exec chmod 755 {} \; \
+    && find /var/www/html -type f -exec chmod 644 {} \;
 
-# Expose the port Nginx is running on
+# Install Composer dependencies
+RUN composer install --no-interaction --optimize-autoloader --prefer-dist
+
+# Configure Apache to serve the Laravel public directory
+RUN echo '<VirtualHost *:80>\n\
+    DocumentRoot /var/www/html/public\n\
+    <Directory /var/www/html/public>\n\
+        AllowOverride All\n\
+        Require all granted\n\
+    </Directory>\n\
+</VirtualHost>' > /etc/apache2/sites-available/000-default.conf
+
+# Expose the necessary port
 EXPOSE 80
 
-# Start Nginx and PHP-FPM services
-CMD service nginx start && php-fpm
+# Start Apache in the foreground
+CMD ["apache2-foreground"]
